@@ -41,7 +41,7 @@ public class ListenerChain<L, E>
     {
         Objects.requireNonNull(listener);
         if (listeners.remove(listener))
-            chain = listeners.stream().reduce((Consumer<E>) null, this::linkListener,
+            chain = listeners.stream().reduce(null, this::linkListener,
                     (c1, c2) -> c1 == null ? c2 : c2 == null ? c1 : c1.andThen(c2));
     }
 

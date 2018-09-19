@@ -17,7 +17,7 @@ public class ListenerChain<L, E>
         this.invoker = Objects.requireNonNull(invoker);
     }
 
-    public void invoke(E event)
+    public void fire(E event)
     {
         Objects.requireNonNull(event);
         Consumer<E> chainCopy;

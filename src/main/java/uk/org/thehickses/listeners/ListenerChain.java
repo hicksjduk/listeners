@@ -8,11 +8,21 @@ import java.util.function.Consumer;
 
 public class ListenerChain<L, E>
 {
+    public static <E> ListenerChain<Listener<E>, E> newInstance()
+    {
+        return new ListenerChain<>((listener, event) -> listener.process(event));
+    }
+
+    public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> invoker)
+    {
+        return new ListenerChain<>(invoker);
+    }
+
     private Consumer<E> chain = null;
     private final Set<L> listeners = new HashSet<>();
     private final BiConsumer<L, E> invoker;
 
-    public ListenerChain(BiConsumer<L, E> invoker)
+    private ListenerChain(BiConsumer<L, E> invoker)
     {
         this.invoker = Objects.requireNonNull(invoker);
     }

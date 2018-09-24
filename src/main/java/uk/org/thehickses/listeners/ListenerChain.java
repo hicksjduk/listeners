@@ -81,12 +81,12 @@ public class ListenerChain<L, E>
     private void fireAsync(E event)
     {
         Snapshot<L, E> snapshot = new Snapshot<>(this);
-        AtomicInteger lCount = new AtomicInteger(snapshot.listenerCount);
-        Channel<Runnable> ch = new Channel<>(lCount.get());
+        Channel<Runnable> ch = new Channel<>(snapshot.listenerCount);
         executor.execute(() -> ch.range(Runnable::run));
+        AtomicInteger notFiredYet = new AtomicInteger(snapshot.listenerCount);
         BiConsumer<L, E> firer = (l, e) -> {
             ch.put(() -> invoker.accept(l, e));
-            if (lCount.decrementAndGet() == 0)
+            if (notFiredYet.decrementAndGet() == 0)
                 ch.closeWhenEmpty();
         };
         fire(event, firer, snapshot);

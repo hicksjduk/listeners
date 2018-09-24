@@ -3,6 +3,7 @@ package uk.org.thehickses.listeners;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.stream.IntStream;
@@ -12,7 +13,112 @@ import uk.org.thehickses.channel.Channel;
 
 public class ListenerChain<L, E>
 {
-    private interface ChainLink<L, E> extends BiConsumer<E, BiConsumer<L, E>>
+    public static <E> ListenerChain<Listener<E>, E> newInstance()
+    {
+        return new ListenerChain<>((listener, event) -> listener.process(event), 0, null);
+    }
+
+    public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> invoker)
+    {
+        return new ListenerChain<>(invoker, 0, null);
+    }
+
+    public static <E> ListenerChain<Listener<E>, E> newInstance(int threadCount)
+    {
+        return new ListenerChain<>((listener, event) -> listener.process(event), threadCount, null);
+    }
+
+    public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> invoker, int threadCount)
+    {
+        return new ListenerChain<>(invoker, threadCount, null);
+    }
+
+    public static <E> ListenerChain<Listener<E>, E> newInstance(int threadCount, Executor executor)
+    {
+        return new ListenerChain<>((listener, event) -> listener.process(event), threadCount,
+                executor);
+    }
+
+    public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> invoker, int threadCount,
+            Executor executor)
+    {
+        return new ListenerChain<>(invoker, threadCount, executor);
+    }
+
+    private ChainLink<L, E> chain = null;
+    private final Set<L> listeners = new HashSet<>();
+    private final BiConsumer<L, E> invoker;
+    private final Executor executor;
+
+    private ListenerChain(BiConsumer<L, E> invoker, int threadCount, Executor executor)
+    {
+        this.invoker = Objects.requireNonNull(invoker);
+        this.executor = threadCount == 0 ? null : threadRunner(threadCount, executor);
+    }
+
+    private static Executor threadRunner(int threadCount, Executor executor)
+    {
+        Executor ex = executor == null ? r -> new Thread(r).start() : executor;
+        return r -> IntStream.range(0, threadCount).forEach(i -> ex.execute(r));
+    }
+
+    public void fire(E event)
+    {
+        Objects.requireNonNull(event);
+        if (executor == null)
+            fireSync(event);
+        else
+            fireAsync(event);
+    }
+
+    private void fire(E event, BiConsumer<L, E> firer, Snapshot<L, E> snapshot)
+    {
+        if (snapshot.chain == null)
+            return;
+        snapshot.chain.accept(event, firer);
+    }
+
+    private void fireAsync(E event)
+    {
+        Snapshot<L, E> snapshot = new Snapshot<>(this);
+        AtomicInteger lCount = new AtomicInteger(snapshot.listenerCount);
+        Channel<Runnable> ch = new Channel<>(lCount.get());
+        executor.execute(() -> ch.range(Runnable::run));
+        BiConsumer<L, E> firer = (l, e) -> {
+            ch.put(() -> invoker.accept(l, e));
+            if (lCount.decrementAndGet() == 0)
+                ch.closeWhenEmpty();
+        };
+        fire(event, firer, snapshot);
+    }
+
+    private void fireSync(E event)
+    {
+        fire(event, invoker, new Snapshot<>(this));
+    }
+
+    public synchronized void addListener(L listener)
+    {
+        Objects.requireNonNull(listener);
+        if (listeners.add(listener))
+            chain = linkListener(chain, listener);
+    }
+
+    public synchronized void removeListener(L listener)
+    {
+        Objects.requireNonNull(listener);
+        if (listeners.remove(listener))
+            chain = listeners.stream().reduce(null, this::linkListener,
+                    (c1, c2) -> c1 == null ? c2 : c2 == null ? c1 : c1.andThen(c2));
+    }
+
+    private ChainLink<L, E> linkListener(ChainLink<L, E> chain, L listener)
+    {
+        ChainLink<L, E> link = (event, invoker) -> invoker.accept(listener, event);
+        return chain == null ? link : chain.andThen(link);
+    }
+
+    private static interface ChainLink<L, E> extends BiConsumer<E, BiConsumer<L, E>>
     {
         default ChainLink<L, E> andThen(ChainLink<L, E> link)
         {
@@ -20,104 +126,18 @@ public class ListenerChain<L, E>
         }
     }
 
-    public static <E> ListenerChain<Listener<E>, E> newInstance()
+    private static class Snapshot<L, E>
     {
-        return new ListenerChain<>((listener, event) -> listener.process(event), 0);
-    }
+        public final ChainLink<L, E> chain;
+        public final int listenerCount;
 
-    public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> invoker)
-    {
-        return new ListenerChain<>(invoker, 0);
-    }
-
-    public static <E> ListenerChain<Listener<E>, E> newInstance(int threadCount)
-    {
-        return new ListenerChain<>((listener, event) -> listener.process(event), threadCount);
-    }
-
-    public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> invoker, int threadCount)
-    {
-        return new ListenerChain<>(invoker, threadCount);
-    }
-
-    private ChainLink<L, E> chain = null;
-    private final Set<L> listeners = new HashSet<>();
-    private final AtomicInteger listenerCount = new AtomicInteger();
-    private final BiConsumer<L, E> invoker;
-    private final int threadCount;
-
-    private ListenerChain(BiConsumer<L, E> invoker, int threadCount)
-    {
-        this.invoker = Objects.requireNonNull(invoker);
-        this.threadCount = threadCount;
-    }
-
-    public void fire(E event)
-    {
-        Objects.requireNonNull(event);
-        if (threadCount == 0)
-            fireSync(event);
-        else
-            fireAsync(event);
-    }
-
-    private void fire(E event, BiConsumer<L, E> firer)
-    {
-        ChainLink<L, E> chainCopy;
-        synchronized (this)
+        private Snapshot(ListenerChain<L, E> lc)
         {
-            if (chain == null)
-                return;
-            chainCopy = chain;
+            synchronized (lc)
+            {
+                chain = lc.chain;
+                listenerCount = lc.listeners.size();
+            }
         }
-        chainCopy.accept(event, firer);
-    }
-
-    private void fireAsync(E event)
-    {
-        AtomicInteger lCount = new AtomicInteger(listenerCount.get());
-        Channel<Runnable> ch = new Channel<>(lCount.get());
-        IntStream
-                .range(0, threadCount)
-                .mapToObj(i -> new Thread(() -> ch.range(Runnable::run)))
-                .forEach(Thread::start);
-        BiConsumer<L, E> firer = (l, e) -> {
-            ch.put(() -> invoker.accept(l, e));
-            if (lCount.decrementAndGet() == 0)
-                ch.closeWhenEmpty();
-        };
-        fire(event, firer);
-    }
-
-    private void fireSync(E event)
-    {
-        fire(event, invoker);
-    }
-
-    public synchronized void addListener(L listener)
-    {
-        Objects.requireNonNull(listener);
-        if (listeners.add(listener))
-        {
-            chain = linkListener(chain, listener);
-            listenerCount.incrementAndGet();
-        }
-    }
-
-    public synchronized void removeListener(L listener)
-    {
-        Objects.requireNonNull(listener);
-        if (listeners.remove(listener))
-        {
-            chain = listeners.stream().reduce(null, this::linkListener,
-                    (c1, c2) -> c1 == null ? c2 : c2 == null ? c1 : c1.andThen(c2));
-            listenerCount.decrementAndGet();
-        }
-    }
-
-    private ChainLink<L, E> linkListener(ChainLink<L, E> chain, L listener)
-    {
-        ChainLink<L, E> link = (event, invoker) -> invoker.accept(listener, event);
-        return chain == null ? link : chain.andThen(link);
     }
 }

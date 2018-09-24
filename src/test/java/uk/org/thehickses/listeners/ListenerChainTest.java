@@ -2,6 +2,8 @@ package uk.org.thehickses.listeners;
 
 import static org.mockito.Mockito.*;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -77,6 +79,39 @@ public class ListenerChainTest
         chain.fire("Hello");
         for (int i = listenerCount; i > 0; i--)
             done.get();
+        Stream.of(listeners).forEach(l -> verify(l).process("Hello"));
+        verifyNoMoreInteractions((Object[]) listeners);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testAsyncWithExecutor()
+    {
+        int listenerCount = 200;
+        int threadCount = 20;
+        Listener<String>[] listeners = IntStream
+                .range(0, listenerCount)
+                .mapToObj(i -> mock(Listener.class))
+                .toArray(Listener[]::new);
+        Channel<Void> done = new Channel<>(listenerCount);
+        Listener<String>[] wrappers = Stream.of(listeners).map(l -> (Listener<String>) e -> {
+            l.process(e);
+            done.put(null);
+        }).toArray(Listener[]::new);
+        ExecutorService threadPool = Executors.newFixedThreadPool(10);
+        try
+        {
+            ListenerChain<Listener<String>, String> chain = ListenerChain.newInstance(threadCount,
+                    threadPool);
+            Stream.of(wrappers).forEach(chain::addListener);
+            chain.fire("Hello");
+            for (int i = listenerCount; i > 0; i--)
+                done.get();
+        }
+        finally
+        {
+            threadPool.shutdown();
+        }
         Stream.of(listeners).forEach(l -> verify(l).process("Hello"));
         verifyNoMoreInteractions((Object[]) listeners);
     }

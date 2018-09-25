@@ -115,4 +115,17 @@ public class ListenerChainTest
         Stream.of(listeners).forEach(l -> verify(l).process("Hello"));
         verifyNoMoreInteractions((Object[]) listeners);
     }
+    
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testWithExceptionThrown()
+    {
+        ListenerChain<Listener<String>, String> chain = ListenerChain.newInstance();
+        Listener<String> listener = mock(Listener.class);
+        doThrow(IllegalArgumentException.class).when(listener).process(anyString());
+        chain.addListener(listener);
+        chain.fire("Aaarrggghhh!!!");
+        verify(listener).process("Aaarrggghhh!!!");
+        verifyNoMoreInteractions(listener);
+    }
 }

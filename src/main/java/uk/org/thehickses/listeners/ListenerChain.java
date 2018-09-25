@@ -9,10 +9,15 @@ import java.util.function.BiConsumer;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import uk.org.thehickses.channel.Channel;
 
 public class ListenerChain<L, E>
 {
+    private final static Logger LOG = LoggerFactory.getLogger(ListenerChain.class);
+
     public static <E> ListenerChain<Listener<E>, E> newInstance()
     {
         return new ListenerChain<>((listener, event) -> listener.process(event), 0, null);
@@ -52,8 +57,22 @@ public class ListenerChain<L, E>
 
     private ListenerChain(BiConsumer<L, E> invoker, int threadCount, Executor executor)
     {
-        this.invoker = Objects.requireNonNull(invoker);
+        this.invoker = wrappedInvoker(Objects.requireNonNull(invoker));
         this.executor = threadCount == 0 ? null : threadRunner(threadCount, executor);
+    }
+
+    private static <L, E> BiConsumer<L, E> wrappedInvoker(BiConsumer<L, E> invoker)
+    {
+        return (l, e) -> {
+            try
+            {
+                invoker.accept(l, e);
+            }
+            catch (Throwable ex)
+            {
+                LOG.error("Unexpected error sending event {} to listener {}", e, l, ex);
+            }
+        };
     }
 
     private static Executor threadRunner(int threadCount, Executor executor)

@@ -237,7 +237,7 @@ public class ListenerChain<L, E>
     {
         Objects.requireNonNull(listener);
         if (listeners.add(listener))
-            chain = linkListener(chain, listener);
+            chain = link(chain, listener);
     }
 
     /**
@@ -250,23 +250,31 @@ public class ListenerChain<L, E>
     {
         Objects.requireNonNull(listener);
         if (listeners.remove(listener))
-            chain = listeners.stream().reduce(null, this::linkListener,
-                    (chain1, chain2) -> chain1 == null ? chain2
-                            : chain2 == null ? chain1 : chain1.andThen(chain2));
+            chain = listeners.stream().reduce(null, this::link, this::link);
     }
 
-    private ChainLink<L, E> linkListener(ChainLink<L, E> chain, L listener)
+    private ChainLink<L, E> link(ChainLink<L, E> chain, L listener)
     {
         ChainLink<L, E> link = (event, invoker) -> invoker.accept(listener, event);
-        return chain == null ? link : chain.andThen(link);
+        return link(chain, link);
+    }
+
+    private ChainLink<L, E> link(ChainLink<L, E> chain1, ChainLink<L, E> chain2)
+    {
+        @SuppressWarnings("unchecked")
+        ChainLink<L, E>[] chains = Stream
+                .of(chain1, chain2)
+                .filter(Objects::nonNull)
+                .toArray(ChainLink[]::new);
+        if (chains.length == 0)
+            return null;
+        if (chains.length == 1)
+            return chains[0];
+        return (event, firer) -> Stream.of(chains).forEach(cl -> cl.accept(event, firer));
     }
 
     private static interface ChainLink<L, E> extends BiConsumer<E, BiConsumer<L, E>>
     {
-        default ChainLink<L, E> andThen(ChainLink<L, E> link)
-        {
-            return (event, firer) -> Stream.of(this, link).forEach(cl -> cl.accept(event, firer));
-        }
     }
 
     private static class Snapshot<L, E>

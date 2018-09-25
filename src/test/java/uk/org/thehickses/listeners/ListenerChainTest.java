@@ -140,4 +140,22 @@ public class ListenerChainTest
         verify(listener).process("Hej");
         verifyNoMoreInteractions(listener);
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testFullRemoval()
+    {
+        int listenerCount = 30;
+        ListenerChain<Listener<Boolean>, Boolean> chain = ListenerChain.newInstance();
+        Listener<Boolean>[] listeners = IntStream
+                .range(0, listenerCount)
+                .mapToObj(i -> mock(Listener.class))
+                .toArray(Listener[]::new);
+        Stream.of(listeners).forEach(chain::addListener);
+        chain.fire(true);
+        Stream.of(listeners).forEach(chain::removeListener);
+        chain.fire(false);
+        Stream.of(listeners).forEach(l -> verify(l).process(true));
+        verifyNoMoreInteractions((Object[]) listeners);
+    }
 }

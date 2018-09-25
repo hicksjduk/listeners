@@ -20,34 +20,48 @@ public class ListenerChain<L, E>
 
     public static <E> ListenerChain<Listener<E>, E> newInstance()
     {
-        return new ListenerChain<>((listener, event) -> listener.process(event), 0, null);
+        return new ListenerChain<>(defaultInvoker(), null);
     }
 
     public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> invoker)
     {
-        return new ListenerChain<>(invoker, 0, null);
+        return new ListenerChain<>(invoker, null);
     }
 
     public static <E> ListenerChain<Listener<E>, E> newInstance(int threadCount)
     {
-        return new ListenerChain<>((listener, event) -> listener.process(event), threadCount, null);
+        return new ListenerChain<>(defaultInvoker(), defaultExecutor(threadCount));
     }
 
     public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> invoker, int threadCount)
     {
-        return new ListenerChain<>(invoker, threadCount, null);
+        return new ListenerChain<>(invoker, defaultExecutor(threadCount));
     }
 
-    public static <E> ListenerChain<Listener<E>, E> newInstance(int threadCount, Executor executor)
+    public static <E> ListenerChain<Listener<E>, E> newInstance(Executor executor)
     {
-        return new ListenerChain<>((listener, event) -> listener.process(event), threadCount,
-                executor);
+        return new ListenerChain<>(defaultInvoker(), executor);
     }
 
-    public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> invoker, int threadCount,
+    public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> invoker,
             Executor executor)
     {
-        return new ListenerChain<>(invoker, threadCount, executor);
+        return new ListenerChain<>(invoker, executor);
+    }
+
+    private static <E> BiConsumer<Listener<E>, E> defaultInvoker()
+    {
+        return (listener, event) -> listener.process(event);
+    }
+
+    private static Executor defaultExecutor(int threadCount)
+    {
+        return threadCount > 0
+                ? r -> IntStream
+                        .range(0, threadCount)
+                        .mapToObj(i -> new Thread(r))
+                        .forEach(Thread::start)
+                : null;
     }
 
     private ChainLink<L, E> chain = null;
@@ -55,10 +69,10 @@ public class ListenerChain<L, E>
     private final BiConsumer<L, E> invoker;
     private final Executor executor;
 
-    private ListenerChain(BiConsumer<L, E> invoker, int threadCount, Executor executor)
+    private ListenerChain(BiConsumer<L, E> invoker, Executor executor)
     {
         this.invoker = wrappedInvoker(Objects.requireNonNull(invoker));
-        this.executor = threadCount == 0 ? null : threadRunner(threadCount, executor);
+        this.executor = executor;
     }
 
     private static <L, E> BiConsumer<L, E> wrappedInvoker(BiConsumer<L, E> invoker)
@@ -73,12 +87,6 @@ public class ListenerChain<L, E>
                 LOG.error("Unexpected error sending event {} to listener {}", e, l, ex);
             }
         };
-    }
-
-    private static Executor threadRunner(int threadCount, Executor executor)
-    {
-        Executor ex = executor == null ? r -> new Thread(r).start() : executor;
-        return r -> IntStream.range(0, threadCount).forEach(i -> ex.execute(r));
     }
 
     public void fire(E event)

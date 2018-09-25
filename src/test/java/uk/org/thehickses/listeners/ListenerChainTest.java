@@ -88,7 +88,6 @@ public class ListenerChainTest
     public void testAsyncWithExecutor()
     {
         int listenerCount = 200;
-        int threadCount = 20;
         Listener<String>[] listeners = IntStream
                 .range(0, listenerCount)
                 .mapToObj(i -> mock(Listener.class))
@@ -101,8 +100,7 @@ public class ListenerChainTest
         ExecutorService threadPool = Executors.newFixedThreadPool(10);
         try
         {
-            ListenerChain<Listener<String>, String> chain = ListenerChain.newInstance(threadCount,
-                    threadPool);
+            ListenerChain<Listener<String>, String> chain = ListenerChain.newInstance(threadPool);
             Stream.of(wrappers).forEach(chain::addListener);
             chain.fire("Hello");
             for (int i = listenerCount; i > 0; i--)
@@ -115,7 +113,7 @@ public class ListenerChainTest
         Stream.of(listeners).forEach(l -> verify(l).process("Hello"));
         verifyNoMoreInteractions((Object[]) listeners);
     }
-    
+
     @SuppressWarnings("unchecked")
     @Test
     public void testWithExceptionThrown()
@@ -126,6 +124,18 @@ public class ListenerChainTest
         chain.addListener(listener);
         chain.fire("Aaarrggghhh!!!");
         verify(listener).process("Aaarrggghhh!!!");
+        verifyNoMoreInteractions(listener);
+    }
+    
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testWithNegativeThreadCount()
+    {
+        ListenerChain<Listener<String>, String> chain = ListenerChain.newInstance(-4);
+        Listener<String> listener = mock(Listener.class);
+        chain.addListener(listener);
+        chain.fire("Hej");
+        verify(listener).process("Hej");
         verifyNoMoreInteractions(listener);
     }
 }

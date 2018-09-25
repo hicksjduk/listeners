@@ -69,17 +69,15 @@ public class ListenerChainTest
                 .range(0, listenerCount)
                 .mapToObj(i -> mock(Listener.class))
                 .toArray(Listener[]::new);
-        Channel<Void> done = new Channel<>(listenerCount);
+        Channel<Listener<String>> done = new Channel<>(listenerCount);
         Listener<String>[] wrappers = Stream.of(listeners).map(l -> (Listener<String>) e -> {
             l.process(e);
-            done.put(null);
+            done.put(l);
         }).toArray(Listener[]::new);
         ListenerChain<Listener<String>, String> chain = ListenerChain.newInstance(threadCount);
         Stream.of(wrappers).forEach(chain::addListener);
         chain.fire("Hello");
-        for (int i = listenerCount; i > 0; i--)
-            done.get();
-        Stream.of(listeners).forEach(l -> verify(l).process("Hello"));
+        IntStream.range(0, listenerCount).forEach(i -> verify(done.get().value).process("Hello"));
         verifyNoMoreInteractions((Object[]) listeners);
     }
 
@@ -93,10 +91,10 @@ public class ListenerChainTest
                 .range(0, listenerCount)
                 .mapToObj(i -> mock(Listener.class))
                 .toArray(Listener[]::new);
-        Channel<Void> done = new Channel<>(listenerCount);
+        Channel<Listener<String>> done = new Channel<>(listenerCount);
         Listener<String>[] wrappers = Stream.of(listeners).map(l -> (Listener<String>) e -> {
             l.process(e);
-            done.put(null);
+            done.put(l);
         }).toArray(Listener[]::new);
         ExecutorService threadPool = Executors.newFixedThreadPool(10);
         try
@@ -105,14 +103,13 @@ public class ListenerChainTest
                     threadPool);
             Stream.of(wrappers).forEach(chain::addListener);
             chain.fire("Hello");
-            for (int i = listenerCount; i > 0; i--)
-                done.get();
+            IntStream.range(0, listenerCount).forEach(
+                    i -> verify(done.get().value).process("Hello"));
         }
         finally
         {
             threadPool.shutdown();
         }
-        Stream.of(listeners).forEach(l -> verify(l).process("Hello"));
         verifyNoMoreInteractions((Object[]) listeners);
     }
 

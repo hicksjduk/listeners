@@ -1,12 +1,13 @@
 package uk.org.thehickses.listeners;
 
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import org.slf4j.Logger;
@@ -27,9 +28,9 @@ import uk.org.thehickses.channel.Channel;
  * @param <E>
  *            The type of the events.
  */
-public class ListenerChain<L, E>
+public class Listeners<L, E>
 {
-    private final static Logger LOG = LoggerFactory.getLogger(ListenerChain.class);
+    private final static Logger LOG = LoggerFactory.getLogger(Listeners.class);
 
     /**
      * Creates a chain of listeners of the default listener type, which notifies events of a specified event type
@@ -39,9 +40,9 @@ public class ListenerChain<L, E>
      *            The type of the events.
      * @return the chain.
      */
-    public static <E> ListenerChain<Listener<E>, E> newInstance()
+    public static <E> Listeners<Listener<E>, E> newInstance()
     {
-        return new ListenerChain<>(Listener::process, null);
+        return new Listeners<>(Listener::process, null);
     }
 
     /**
@@ -57,15 +58,15 @@ public class ListenerChain<L, E>
      * 
      * @return the chain.
      */
-    public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> notifier)
+    public static <L, E> Listeners<L, E> newInstance(BiConsumer<L, E> notifier)
     {
-        return new ListenerChain<>(notifier, null);
+        return new Listeners<>(notifier, null);
     }
 
     /**
      * Creates a chain of listeners of the default listener type, which notifies events of a specified event type. If
-     * the specified thread count is greater than 0, the events are notified asynchronously by creating the specified
-     * number of threads; otherwise they are notified synchronously.
+     * the specified thread count is greater than 0, the events are notified asynchronously by creating up to the
+     * specified number of threads; otherwise they are notified synchronously.
      * 
      * @param <E>
      *            The type of the events.
@@ -74,15 +75,15 @@ public class ListenerChain<L, E>
      * 
      * @return the chain.
      */
-    public static <E> ListenerChain<Listener<E>, E> newInstance(int threadCount)
+    public static <E> Listeners<Listener<E>, E> newInstance(int threadCount)
     {
-        return new ListenerChain<>(Listener::process, executor(threadCount, null));
+        return new Listeners<>(Listener::process, executor(threadCount, null));
     }
 
     /**
      * Creates a chain of listeners of a specified listener type, which notifies events of a specified event type. If
-     * the specified thread count is greater than 0, the events are notified asynchronously by creating the specified
-     * number of threads; otherwise they are notified synchronously.
+     * the specified thread count is greater than 0, the events are notified asynchronously by creating up to the
+     * specified number of threads; otherwise they are notified synchronously.
      * 
      * @param <L>
      *            The type of the listeners.
@@ -95,9 +96,9 @@ public class ListenerChain<L, E>
      * 
      * @return the chain.
      */
-    public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> notifier, int threadCount)
+    public static <L, E> Listeners<L, E> newInstance(BiConsumer<L, E> notifier, int threadCount)
     {
-        return new ListenerChain<>(notifier, executor(threadCount, null));
+        return new Listeners<>(notifier, executor(threadCount, null));
     }
 
     /**
@@ -116,9 +117,9 @@ public class ListenerChain<L, E>
      * 
      * @return the chain.
      */
-    public static <E> ListenerChain<Listener<E>, E> newInstance(int threadCount, Executor executor)
+    public static <E> Listeners<Listener<E>, E> newInstance(int threadCount, Executor executor)
     {
-        return new ListenerChain<>(Listener::process, executor(threadCount, executor));
+        return new Listeners<>(Listener::process, executor(threadCount, executor));
     }
 
     /**
@@ -141,21 +142,23 @@ public class ListenerChain<L, E>
      * 
      * @return the chain.
      */
-    public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> notifier, int threadCount,
+    public static <L, E> Listeners<L, E> newInstance(BiConsumer<L, E> notifier, int threadCount,
             Executor executor)
     {
-        return new ListenerChain<>(notifier, executor(threadCount, executor));
+        return new Listeners<>(notifier, executor(threadCount, executor));
     }
 
-    private static Executor executor(int threadCount, Executor executor)
+    private static BiConsumer<Integer, Runnable> executor(int threadCount, Executor executor)
     {
         if (threadCount > 0)
-            return runnable -> IntStream.range(0, threadCount).forEach(i -> {
-                if (executor == null)
-                    new Thread(runnable).start();
-                else
-                    executor.execute(runnable);
-            });
+            return (listenerCount, runnable) -> IntStream
+                    .range(0, Math.min(listenerCount, threadCount))
+                    .forEach(i -> {
+                        if (executor == null)
+                            new Thread(runnable).start();
+                        else
+                            executor.execute(runnable);
+                    });
         return null;
     }
 
@@ -173,13 +176,12 @@ public class ListenerChain<L, E>
         };
     }
 
-    private ChainLink<L, E> chain = null;
     private final Map<L, Predicate<E>> listeners = new HashMap<>();
     private final BiConsumer<L, E> notifier;
-    private final Executor executor;
+    private final BiConsumer<Integer, Runnable> executor;
     private final Predicate<E> acceptAllSelector = event -> true;
 
-    private ListenerChain(BiConsumer<L, E> notifier, Executor executor)
+    private Listeners(BiConsumer<L, E> notifier, BiConsumer<Integer, Runnable> executor)
     {
         this.notifier = faultLoggingNotifier(Objects.requireNonNull(notifier));
         this.executor = executor;
@@ -200,28 +202,29 @@ public class ListenerChain<L, E>
             fireAsync(event);
     }
 
-    private void fire(E event, BiConsumer<L, E> firer, Snapshot<L, E> snapshot)
+    private void fire(E event, BiConsumer<L, E> firer, Collection<L> listeners)
     {
-        if (snapshot.chain == null)
+        if (listeners.isEmpty())
             return;
-        snapshot.chain.accept(event, firer);
+        listeners.forEach(listener -> firer.accept(listener, event));
     }
 
     private void fireAsync(E event)
     {
-        Snapshot<L, E> snapshot = new Snapshot<>(this);
-        if (snapshot.chain == null)
+        Collection<L> listeners = listenersForEvent(event);
+        if (listeners.isEmpty())
             return;
-        Channel<Runnable> ch = new Channel<>(snapshot.listenerCount);
-        executor.execute(() -> ch.range(Runnable::run));
+        int listenerCount = listeners.size();
+        Channel<Runnable> ch = new Channel<>(listenerCount);
+        executor.accept(listenerCount, () -> ch.range(Runnable::run));
         BiConsumer<L, E> firer = (listener, evt) -> ch.put(() -> notifier.accept(listener, evt));
-        fire(event, firer, snapshot);
+        fire(event, firer, listeners);
         ch.closeWhenEmpty();
     }
 
     private void fireSync(E event)
     {
-        fire(event, notifier, new Snapshot<>(this));
+        fire(event, notifier, listenersForEvent(event));
     }
 
     /**
@@ -249,12 +252,7 @@ public class ListenerChain<L, E>
     public synchronized void addOrUpdateListener(L listener, Predicate<E> selector)
     {
         Objects.requireNonNull(listener);
-        Predicate<E> newSelector = selector == null ? acceptAllSelector : selector;
-        Predicate<E> oldSelector = listeners.put(listener, newSelector);
-        if (oldSelector == null)
-            chain = linkListener(chain, listener, newSelector);
-        else if (!Objects.equals(oldSelector, newSelector))
-            chain = rebuildChain();
+        listeners.put(listener, selector == null ? acceptAllSelector : selector);
     }
 
     /**
@@ -266,58 +264,16 @@ public class ListenerChain<L, E>
     public synchronized void removeListener(L listener)
     {
         Objects.requireNonNull(listener);
-        if (listeners.remove(listener) != null)
-            chain = rebuildChain();
+        listeners.remove(listener);
     }
 
-    private synchronized ChainLink<L, E> rebuildChain()
+    private synchronized Collection<L> listenersForEvent(E event)
     {
-        return listeners.entrySet().stream().reduce(null, this::linkListener, this::linkChains);
-    }
-
-    private ChainLink<L, E> linkListener(ChainLink<L, E> chain,
-            Entry<L, Predicate<E>> listenerAndSelector)
-    {
-        return linkListener(chain, listenerAndSelector.getKey(), listenerAndSelector.getValue());
-    }
-
-    private ChainLink<L, E> linkListener(ChainLink<L, E> chain, L listener, Predicate<E> selector)
-    {
-        ChainLink<L, E> link = (event, firer) -> {
-            if (selector.test(event))
-                firer.accept(listener, event);
-        };
-        return linkChains(chain, link);
-    }
-
-    private ChainLink<L, E> linkChains(ChainLink<L, E> chain1, ChainLink<L, E> chain2)
-    {
-        if (chain1 == null)
-            return chain2;
-        if (chain2 == null)
-            return chain1;
-        return (event, firer) -> {
-            chain1.accept(event, firer);
-            chain2.accept(event, firer);
-        };
-    }
-
-    private static interface ChainLink<L, E> extends BiConsumer<E, BiConsumer<L, E>>
-    {
-    }
-
-    private static class Snapshot<L, E>
-    {
-        public final ChainLink<L, E> chain;
-        public final int listenerCount;
-
-        private Snapshot(ListenerChain<L, E> lc)
-        {
-            synchronized (lc)
-            {
-                chain = lc.chain;
-                listenerCount = lc.listeners.size();
-            }
-        }
+        return listeners
+                .entrySet()
+                .stream()
+                .filter(e -> e.getValue().test(event))
+                .map(e -> e.getKey())
+                .collect(Collectors.toSet());
     }
 }

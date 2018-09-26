@@ -13,7 +13,7 @@ import org.junit.Test;
 
 import uk.org.thehickses.channel.Channel;
 
-public class ListenerChainTest
+public class ListenersTest
 {
     @Test
     public void testDefaultInterface()
@@ -24,7 +24,7 @@ public class ListenerChainTest
                 .range(0, listenerCount)
                 .mapToObj(i -> mock(Listener.class))
                 .toArray(Listener[]::new);
-        ListenerChain<Listener<String>, String> chain = ListenerChain.newInstance();
+        Listeners<Listener<String>, String> chain = Listeners.newInstance();
         chain.fire("First");
         Stream.of(listeners).forEach(chain::addOrUpdateListener);
         chain.fire("Second");
@@ -49,7 +49,7 @@ public class ListenerChainTest
                 .range(0, listenerCount)
                 .mapToObj(i -> mock(MyListener.class))
                 .toArray(MyListener[]::new);
-        ListenerChain<MyListener, String> chain = ListenerChain.newInstance(MyListener::doIt);
+        Listeners<MyListener, String> chain = Listeners.newInstance(MyListener::doIt);
         chain.fire("First");
         Stream.of(listeners).forEach(chain::addOrUpdateListener);
         chain.fire("Second");
@@ -76,7 +76,7 @@ public class ListenerChainTest
             l.process(e);
             done.put(l);
         }).toArray(Listener[]::new);
-        ListenerChain<Listener<String>, String> chain = ListenerChain.newInstance(threadCount);
+        Listeners<Listener<String>, String> chain = Listeners.newInstance(threadCount);
         Stream.of(wrappers).forEach(chain::addOrUpdateListener);
         chain.fire("Hello");
         IntStream.range(0, listenerCount).forEach(i -> verify(done.get().value).process("Hello"));
@@ -101,7 +101,7 @@ public class ListenerChainTest
         ExecutorService threadPool = Executors.newFixedThreadPool(10);
         try
         {
-            ListenerChain<Listener<String>, String> chain = ListenerChain.newInstance(threadCount,
+            Listeners<Listener<String>, String> chain = Listeners.newInstance(threadCount,
                     threadPool);
             Stream.of(wrappers).forEach(chain::addOrUpdateListener);
             chain.fire("Hello");
@@ -119,7 +119,7 @@ public class ListenerChainTest
     @Test
     public void testWithExceptionThrown()
     {
-        ListenerChain<Listener<String>, String> chain = ListenerChain.newInstance();
+        Listeners<Listener<String>, String> chain = Listeners.newInstance();
         Listener<String> listener = mock(Listener.class);
         doThrow(IllegalArgumentException.class).when(listener).process(anyString());
         chain.addOrUpdateListener(listener);
@@ -132,7 +132,7 @@ public class ListenerChainTest
     @SuppressWarnings("unchecked")
     public void testWithNegativeThreadCount()
     {
-        ListenerChain<Listener<String>, String> chain = ListenerChain.newInstance(-4);
+        Listeners<Listener<String>, String> chain = Listeners.newInstance(-4);
         Listener<String> listener = mock(Listener.class);
         chain.addOrUpdateListener(listener);
         chain.fire("Hej");
@@ -145,7 +145,7 @@ public class ListenerChainTest
     public void testFullRemoval()
     {
         int listenerCount = 30;
-        ListenerChain<Listener<Boolean>, Boolean> chain = ListenerChain.newInstance();
+        Listeners<Listener<Boolean>, Boolean> chain = Listeners.newInstance();
         Listener<Boolean>[] listeners = IntStream
                 .range(0, listenerCount)
                 .mapToObj(i -> mock(Listener.class))
@@ -163,7 +163,7 @@ public class ListenerChainTest
     public void testSyncWithSelector()
     {
         int listenerCount = 30;
-        ListenerChain<Listener<Boolean>, Boolean> chain = ListenerChain.newInstance();
+        Listeners<Listener<Boolean>, Boolean> chain = Listeners.newInstance();
         Listener<Boolean>[] listeners = IntStream
                 .range(0, listenerCount)
                 .mapToObj(i -> mock(Listener.class))
@@ -214,7 +214,7 @@ public class ListenerChainTest
         Predicate<Boolean>[] selectors = Stream
                 .<Predicate<Boolean>> of(null, b -> b, b -> !b)
                 .toArray(Predicate[]::new);
-        ListenerChain<Listener<Boolean>, Boolean> chain = ListenerChain.newInstance(5);
+        Listeners<Listener<Boolean>, Boolean> chain = Listeners.newInstance(5);
         IntStream.range(0, listenerCount).forEach(
                 i -> chain.addOrUpdateListener(wrappers[i], selectors[i % 3]));
         chain.fire(true);

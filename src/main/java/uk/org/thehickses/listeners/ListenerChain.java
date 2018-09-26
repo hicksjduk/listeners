@@ -1,13 +1,13 @@
 package uk.org.thehickses.listeners;
 
-import java.util.HashSet;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.Executor;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
+import java.util.function.Predicate;
 import java.util.stream.IntStream;
-import java.util.stream.Stream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,7 +15,10 @@ import org.slf4j.LoggerFactory;
 import uk.org.thehickses.channel.Channel;
 
 /**
- * A chain of listeners for some arbitrary type of event.
+ * A generic implementation of the Listener design pattern. Can be used to register listeners of any type, and fire
+ * events of any type to all registered listeners. Firing of events can be done either synchronously or asynchronously,
+ * and can be conditional or unconditional - a listener can register to receive all events, or just a subset based on
+ * the event contents.
  * 
  * @author Jeremy Hicks
  *
@@ -151,12 +154,14 @@ public class ListenerChain<L, E>
 
     private static Executor executor(int threadCount, Executor executor)
     {
-        return threadCount > 0 ? runnable -> IntStream.range(0, threadCount).forEach(i -> {
-            if (executor == null)
-                new Thread(runnable).start();
-            else
-                executor.execute(runnable);
-        }) : null;
+        if (threadCount > 0)
+            return runnable -> IntStream.range(0, threadCount).forEach(i -> {
+                if (executor == null)
+                    new Thread(runnable).start();
+                else
+                    executor.execute(runnable);
+            });
+        return null;
     }
 
     private static <L, E> BiConsumer<L, E> faultLoggingInvoker(BiConsumer<L, E> invoker)
@@ -174,9 +179,10 @@ public class ListenerChain<L, E>
     }
 
     private ChainLink<L, E> chain = null;
-    private final Set<L> listeners = new HashSet<>();
+    private final Map<L, Predicate<E>> listeners = new HashMap<>();
     private final BiConsumer<L, E> invoker;
     private final Executor executor;
+    private final Predicate<E> acceptAllSelector = event -> true;
 
     private ListenerChain(BiConsumer<L, E> invoker, Executor executor)
     {
@@ -185,7 +191,7 @@ public class ListenerChain<L, E>
     }
 
     /**
-     * Fires an event to all registered listeners.
+     * Fires an event to all registered listeners whose selector accepts it.
      * 
      * @param event
      *            the event.
@@ -213,13 +219,9 @@ public class ListenerChain<L, E>
             return;
         Channel<Runnable> ch = new Channel<>(snapshot.listenerCount);
         executor.execute(() -> ch.range(Runnable::run));
-        AtomicInteger notFiredYet = new AtomicInteger(snapshot.listenerCount);
-        BiConsumer<L, E> firer = (listener, evt) -> {
-            ch.put(() -> invoker.accept(listener, evt));
-            if (notFiredYet.decrementAndGet() == 0)
-                ch.closeWhenEmpty();
-        };
+        BiConsumer<L, E> firer = (listener, evt) -> ch.put(() -> invoker.accept(listener, evt));
         fire(event, firer, snapshot);
+        ch.closeWhenEmpty();
     }
 
     private void fireSync(E event)
@@ -228,16 +230,36 @@ public class ListenerChain<L, E>
     }
 
     /**
-     * Registers the specified listener, if it is not already registered.
+     * Registers the specified listener, if it is not already registered, or changes its selector. In either case, the
+     * selector associated with the listener is set to one that selects all events.
      * 
      * @param listener
      *            the listener.
      */
-    public synchronized void addListener(L listener)
+    public synchronized void addOrUpdateListener(L listener)
+    {
+        addOrUpdateListener(listener, null);
+    }
+
+    /**
+     * Registers the specified listener, if it is not already registered, or changes its selector. In either case, the
+     * selector associated with the listener is set to the specified selector, or to one that selects all events if the
+     * selector is null.
+     * 
+     * @param listener
+     *            the listener.
+     * @param the
+     *            selector. May be null, in which case a selector is used that selects all events.
+     */
+    public synchronized void addOrUpdateListener(L listener, Predicate<E> selector)
     {
         Objects.requireNonNull(listener);
-        if (listeners.add(listener))
-            chain = link(chain, listener);
+        Predicate<E> newSelector = selector == null ? acceptAllSelector : selector;
+        Predicate<E> oldSelector = listeners.put(listener, newSelector);
+        if (oldSelector == null)
+            chain = linkListener(chain, listener, newSelector);
+        else if (!Objects.equals(oldSelector, newSelector))
+            chain = rebuildChain();
     }
 
     /**
@@ -249,28 +271,40 @@ public class ListenerChain<L, E>
     public synchronized void removeListener(L listener)
     {
         Objects.requireNonNull(listener);
-        if (listeners.remove(listener))
-            chain = listeners.stream().reduce(null, this::link, this::link);
+        if (listeners.remove(listener) != null)
+            chain = rebuildChain();
     }
 
-    private ChainLink<L, E> link(ChainLink<L, E> chain, L listener)
+    private synchronized ChainLink<L, E> rebuildChain()
     {
-        ChainLink<L, E> link = (event, invoker) -> invoker.accept(listener, event);
-        return link(chain, link);
+        return listeners.entrySet().stream().reduce(null, this::linkListener, this::linkChains);
     }
 
-    private ChainLink<L, E> link(ChainLink<L, E> chain1, ChainLink<L, E> chain2)
+    private ChainLink<L, E> linkListener(ChainLink<L, E> chain,
+            Entry<L, Predicate<E>> listenerAndSelector)
     {
-        @SuppressWarnings("unchecked")
-        ChainLink<L, E>[] chains = Stream
-                .of(chain1, chain2)
-                .filter(Objects::nonNull)
-                .toArray(ChainLink[]::new);
-        if (chains.length == 0)
-            return null;
-        if (chains.length == 1)
-            return chains[0];
-        return (event, firer) -> Stream.of(chains).forEach(cl -> cl.accept(event, firer));
+        return linkListener(chain, listenerAndSelector.getKey(), listenerAndSelector.getValue());
+    }
+
+    private ChainLink<L, E> linkListener(ChainLink<L, E> chain, L listener, Predicate<E> selector)
+    {
+        ChainLink<L, E> link = (event, firer) -> {
+            if (selector.test(event))
+                firer.accept(listener, event);
+        };
+        return linkChains(chain, link);
+    }
+
+    private ChainLink<L, E> linkChains(ChainLink<L, E> chain1, ChainLink<L, E> chain2)
+    {
+        if (chain1 == null)
+            return chain2;
+        if (chain2 == null)
+            return chain1;
+        return (event, firer) -> {
+            chain1.accept(event, firer);
+            chain2.accept(event, firer);
+        };
     }
 
     private static interface ChainLink<L, E> extends BiConsumer<E, BiConsumer<L, E>>

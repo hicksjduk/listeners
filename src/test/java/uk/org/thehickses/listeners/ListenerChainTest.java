@@ -1,9 +1,12 @@
 package uk.org.thehickses.listeners;
 
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.IntFunction;
+import java.util.function.Predicate;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -24,7 +27,7 @@ public class ListenerChainTest
                 .toArray(Listener[]::new);
         ListenerChain<Listener<String>, String> chain = ListenerChain.newInstance();
         chain.fire("First");
-        Stream.of(listeners).forEach(chain::addListener);
+        Stream.of(listeners).forEach(chain::addOrUpdateListener);
         chain.fire("Second");
         chain.removeListener(listeners[0]);
         chain.fire("Third");
@@ -49,7 +52,7 @@ public class ListenerChainTest
                 .toArray(MyListener[]::new);
         ListenerChain<MyListener, String> chain = ListenerChain.newInstance(MyListener::doIt);
         chain.fire("First");
-        Stream.of(listeners).forEach(chain::addListener);
+        Stream.of(listeners).forEach(chain::addOrUpdateListener);
         chain.fire("Second");
         chain.removeListener(listeners[0]);
         chain.fire("Third");
@@ -75,7 +78,7 @@ public class ListenerChainTest
             done.put(l);
         }).toArray(Listener[]::new);
         ListenerChain<Listener<String>, String> chain = ListenerChain.newInstance(threadCount);
-        Stream.of(wrappers).forEach(chain::addListener);
+        Stream.of(wrappers).forEach(chain::addOrUpdateListener);
         chain.fire("Hello");
         IntStream.range(0, listenerCount).forEach(i -> verify(done.get().value).process("Hello"));
         verifyNoMoreInteractions((Object[]) listeners);
@@ -101,7 +104,7 @@ public class ListenerChainTest
         {
             ListenerChain<Listener<String>, String> chain = ListenerChain.newInstance(threadCount,
                     threadPool);
-            Stream.of(wrappers).forEach(chain::addListener);
+            Stream.of(wrappers).forEach(chain::addOrUpdateListener);
             chain.fire("Hello");
             IntStream.range(0, listenerCount).forEach(
                     i -> verify(done.get().value).process("Hello"));
@@ -120,7 +123,7 @@ public class ListenerChainTest
         ListenerChain<Listener<String>, String> chain = ListenerChain.newInstance();
         Listener<String> listener = mock(Listener.class);
         doThrow(IllegalArgumentException.class).when(listener).process(anyString());
-        chain.addListener(listener);
+        chain.addOrUpdateListener(listener);
         chain.fire("Aaarrggghhh!!!");
         verify(listener).process("Aaarrggghhh!!!");
         verifyNoMoreInteractions(listener);
@@ -132,7 +135,7 @@ public class ListenerChainTest
     {
         ListenerChain<Listener<String>, String> chain = ListenerChain.newInstance(-4);
         Listener<String> listener = mock(Listener.class);
-        chain.addListener(listener);
+        chain.addOrUpdateListener(listener);
         chain.fire("Hej");
         verify(listener).process("Hej");
         verifyNoMoreInteractions(listener);
@@ -148,11 +151,84 @@ public class ListenerChainTest
                 .range(0, listenerCount)
                 .mapToObj(i -> mock(Listener.class))
                 .toArray(Listener[]::new);
-        Stream.of(listeners).forEach(chain::addListener);
+        Stream.of(listeners).forEach(chain::addOrUpdateListener);
         chain.fire(true);
         Stream.of(listeners).forEach(chain::removeListener);
         chain.fire(false);
         Stream.of(listeners).forEach(l -> verify(l).process(true));
+        verifyNoMoreInteractions((Object[]) listeners);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testSyncWithSelector()
+    {
+        int listenerCount = 30;
+        ListenerChain<Listener<Boolean>, Boolean> chain = ListenerChain.newInstance();
+        Listener<Boolean>[] listeners = IntStream
+                .range(0, listenerCount)
+                .mapToObj(i -> mock(Listener.class))
+                .toArray(Listener[]::new);
+        Predicate<Boolean>[] selectors = IntStream
+                .range(0, listenerCount)
+                .mapToObj((IntFunction<Predicate<Boolean>>) i -> {
+                    switch (i % 3)
+                    {
+                    case 0:
+                        return null;
+                    case 1:
+                        return b -> b;
+                    default:
+                        return b -> !b;
+                    }
+                })
+                .toArray(Predicate[]::new);
+        IntStream.range(0, listenerCount).forEach(
+                i -> chain.addOrUpdateListener(listeners[i], selectors[i]));
+        chain.fire(true);
+        Stream.of(listeners).forEach(l -> chain.addOrUpdateListener(l, b -> b));
+        chain.fire(false);
+        Stream.of(listeners).forEach(l -> chain.addOrUpdateListener(l));
+        chain.fire(false);
+        IntStream.range(0, listenerCount).forEach(i -> {
+            if (i % 3 != 2)
+                verify(listeners[i]).process(true);
+            verify(listeners[i]).process(false);
+        });
+        verifyNoMoreInteractions((Object[]) listeners);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testAsyncWithSelectors()
+    {
+        int listenerCount = 30;
+        Listener<Boolean>[] listeners = IntStream
+                .range(0, listenerCount)
+                .mapToObj(i -> mock(Listener.class))
+                .toArray(Listener[]::new);
+        Channel<Void> done = new Channel<>(listenerCount * 2);
+        Listener<Boolean>[] wrappers = Stream.of(listeners).map(l -> (Listener<Boolean>) e -> {
+            l.process(e);
+            done.put(null);
+        }).toArray(Listener[]::new);
+        Predicate<Boolean>[] selectors = Stream
+                .<Predicate<Boolean>> of(null, b -> b, b -> !b)
+                .toArray(Predicate[]::new);
+        ListenerChain<Listener<Boolean>, Boolean> chain = ListenerChain.newInstance(5);
+        IntStream.range(0, listenerCount).forEach(
+                i -> chain.addOrUpdateListener(wrappers[i], selectors[i % 3]));
+        chain.fire(true);
+        Stream.of(wrappers).forEach(l -> chain.addOrUpdateListener(l, b -> b));
+        chain.fire(false);
+        Stream.of(wrappers).forEach(l -> chain.addOrUpdateListener(l));
+        chain.fire(false);
+        IntStream.range(0, listenerCount * 5 / 3).forEach(i -> done.get());
+        IntStream.range(0, listenerCount).forEach(i -> {
+            if (i % 3 != 2)
+                verify(listeners[i]).process(true);
+            verify(listeners[i]).process(false);
+        });
         verifyNoMoreInteractions((Object[]) listeners);
     }
 }

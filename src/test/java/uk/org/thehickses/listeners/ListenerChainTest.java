@@ -5,7 +5,6 @@ import static org.mockito.Mockito.*;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.function.IntFunction;
 import java.util.function.Predicate;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -73,7 +72,7 @@ public class ListenerChainTest
                 .mapToObj(i -> mock(Listener.class))
                 .toArray(Listener[]::new);
         Channel<Listener<String>> done = new Channel<>(listenerCount);
-        Listener<String>[] wrappers = Stream.of(listeners).map(l -> (Listener<String>) e -> {
+        Listener<String>[] wrappers = Stream.of(listeners).<Listener<String>> map(l -> e -> {
             l.process(e);
             done.put(l);
         }).toArray(Listener[]::new);
@@ -171,7 +170,7 @@ public class ListenerChainTest
                 .toArray(Listener[]::new);
         Predicate<Boolean>[] selectors = IntStream
                 .range(0, listenerCount)
-                .mapToObj((IntFunction<Predicate<Boolean>>) i -> {
+                .<Predicate<Boolean>> mapToObj(i -> {
                     switch (i % 3)
                     {
                     case 0:
@@ -208,7 +207,7 @@ public class ListenerChainTest
                 .mapToObj(i -> mock(Listener.class))
                 .toArray(Listener[]::new);
         Channel<Void> done = new Channel<>(listenerCount * 2);
-        Listener<Boolean>[] wrappers = Stream.of(listeners).map(l -> (Listener<Boolean>) e -> {
+        Listener<Boolean>[] wrappers = Stream.of(listeners).<Listener<Boolean>> map(l -> e -> {
             l.process(e);
             done.put(null);
         }).toArray(Listener[]::new);

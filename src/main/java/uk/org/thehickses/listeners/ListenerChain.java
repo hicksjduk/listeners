@@ -41,7 +41,7 @@ public class ListenerChain<L, E>
      */
     public static <E> ListenerChain<Listener<E>, E> newInstance()
     {
-        return new ListenerChain<>(defaultInvoker(), null);
+        return new ListenerChain<>(Listener::process, null);
     }
 
     /**
@@ -52,14 +52,14 @@ public class ListenerChain<L, E>
      *            The type of the listeners.
      * @param <E>
      *            The type of the events.
-     * @param invoker
+     * @param notifier
      *            an object that knows how to notify an event to a listener.
      * 
      * @return the chain.
      */
-    public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> invoker)
+    public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> notifier)
     {
-        return new ListenerChain<>(invoker, null);
+        return new ListenerChain<>(notifier, null);
     }
 
     /**
@@ -76,7 +76,7 @@ public class ListenerChain<L, E>
      */
     public static <E> ListenerChain<Listener<E>, E> newInstance(int threadCount)
     {
-        return new ListenerChain<>(defaultInvoker(), executor(threadCount, null));
+        return new ListenerChain<>(Listener::process, executor(threadCount, null));
     }
 
     /**
@@ -88,16 +88,16 @@ public class ListenerChain<L, E>
      *            The type of the listeners.
      * @param <E>
      *            The type of the events.
-     * @param invoker
+     * @param notifier
      *            an object that knows how to notify an event to a listener.
      * @param threadCount
      *            the number of threads to use.
      * 
      * @return the chain.
      */
-    public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> invoker, int threadCount)
+    public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> notifier, int threadCount)
     {
-        return new ListenerChain<>(invoker, executor(threadCount, null));
+        return new ListenerChain<>(notifier, executor(threadCount, null));
     }
 
     /**
@@ -118,7 +118,7 @@ public class ListenerChain<L, E>
      */
     public static <E> ListenerChain<Listener<E>, E> newInstance(int threadCount, Executor executor)
     {
-        return new ListenerChain<>(defaultInvoker(), executor(threadCount, executor));
+        return new ListenerChain<>(Listener::process, executor(threadCount, executor));
     }
 
     /**
@@ -131,7 +131,7 @@ public class ListenerChain<L, E>
      *            The type of the listeners.
      * @param <E>
      *            The type of the events.
-     * @param invoker
+     * @param notifier
      *            an object that knows how to notify an event to a listener.
      * @param threadCount
      *            the number of threads to use. Note that if this exceeds the number of threads supported by the
@@ -141,15 +141,10 @@ public class ListenerChain<L, E>
      * 
      * @return the chain.
      */
-    public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> invoker, int threadCount,
+    public static <L, E> ListenerChain<L, E> newInstance(BiConsumer<L, E> notifier, int threadCount,
             Executor executor)
     {
-        return new ListenerChain<>(invoker, executor(threadCount, executor));
-    }
-
-    private static <E> BiConsumer<Listener<E>, E> defaultInvoker()
-    {
-        return (listener, event) -> listener.process(event);
+        return new ListenerChain<>(notifier, executor(threadCount, executor));
     }
 
     private static Executor executor(int threadCount, Executor executor)
@@ -164,12 +159,12 @@ public class ListenerChain<L, E>
         return null;
     }
 
-    private static <L, E> BiConsumer<L, E> faultLoggingInvoker(BiConsumer<L, E> invoker)
+    private static <L, E> BiConsumer<L, E> faultLoggingNotifier(BiConsumer<L, E> notifier)
     {
         return (listener, event) -> {
             try
             {
-                invoker.accept(listener, event);
+                notifier.accept(listener, event);
             }
             catch (Throwable ex)
             {
@@ -180,13 +175,13 @@ public class ListenerChain<L, E>
 
     private ChainLink<L, E> chain = null;
     private final Map<L, Predicate<E>> listeners = new HashMap<>();
-    private final BiConsumer<L, E> invoker;
+    private final BiConsumer<L, E> notifier;
     private final Executor executor;
     private final Predicate<E> acceptAllSelector = event -> true;
 
-    private ListenerChain(BiConsumer<L, E> invoker, Executor executor)
+    private ListenerChain(BiConsumer<L, E> notifier, Executor executor)
     {
-        this.invoker = faultLoggingInvoker(Objects.requireNonNull(invoker));
+        this.notifier = faultLoggingNotifier(Objects.requireNonNull(notifier));
         this.executor = executor;
     }
 
@@ -219,14 +214,14 @@ public class ListenerChain<L, E>
             return;
         Channel<Runnable> ch = new Channel<>(snapshot.listenerCount);
         executor.execute(() -> ch.range(Runnable::run));
-        BiConsumer<L, E> firer = (listener, evt) -> ch.put(() -> invoker.accept(listener, evt));
+        BiConsumer<L, E> firer = (listener, evt) -> ch.put(() -> notifier.accept(listener, evt));
         fire(event, firer, snapshot);
         ch.closeWhenEmpty();
     }
 
     private void fireSync(E event)
     {
-        fire(event, invoker, new Snapshot<>(this));
+        fire(event, notifier, new Snapshot<>(this));
     }
 
     /**
@@ -248,8 +243,8 @@ public class ListenerChain<L, E>
      * 
      * @param listener
      *            the listener.
-     * @param the
-     *            selector. May be null, in which case a selector is used that selects all events.
+     * @param selector
+     *            the selector. May be null, in which case a selector is used that selects all events.
      */
     public synchronized void addOrUpdateListener(L listener, Predicate<E> selector)
     {

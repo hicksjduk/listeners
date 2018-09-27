@@ -60,6 +60,7 @@ public class Listeners<L, E>
      */
     public static <L, E> Listeners<L, E> newInstance(BiConsumer<L, E> notifier)
     {
+        Objects.requireNonNull(notifier);
         return new Listeners<>(notifier, null);
     }
 
@@ -98,6 +99,7 @@ public class Listeners<L, E>
      */
     public static <L, E> Listeners<L, E> newInstance(BiConsumer<L, E> notifier, int threadCount)
     {
+        Objects.requireNonNull(notifier);
         return new Listeners<>(notifier, executor(threadCount, null));
     }
 
@@ -145,6 +147,7 @@ public class Listeners<L, E>
     public static <L, E> Listeners<L, E> newInstance(BiConsumer<L, E> notifier, int threadCount,
             Executor executor)
     {
+        Objects.requireNonNull(notifier);
         return new Listeners<>(notifier, executor(threadCount, executor));
     }
 
@@ -167,9 +170,8 @@ public class Listeners<L, E>
 
     private Listeners(BiConsumer<L, E> notifier, BiConsumer<Integer, Runnable> executor)
     {
-        Objects.requireNonNull(notifier);
-        this.eventFirer = executor == null ? syncFirer(withFaultLogging(notifier))
-                : asyncFirer(withFaultLogging(notifier), executor);
+        notifier = withFaultLogging(notifier);
+        this.eventFirer = executor == null ? syncFirer(notifier) : asyncFirer(notifier, executor);
     }
 
     private BiConsumer<L, E> withFaultLogging(BiConsumer<L, E> notifier)

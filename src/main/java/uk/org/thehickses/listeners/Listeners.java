@@ -1,7 +1,6 @@
 package uk.org.thehickses.listeners;
 
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -168,7 +167,8 @@ public class Listeners<L, E>
 
     private Listeners(BiConsumer<L, E> notifier, BiConsumer<Integer, Runnable> executor)
     {
-        BiConsumer<L, E> wrappedNotifier = faultLoggingNotifier(Objects.requireNonNull(notifier));
+        Objects.requireNonNull(notifier);
+        BiConsumer<L, E> wrappedNotifier = faultLoggingNotifier(notifier);
         this.firer = executor == null ? syncFirer(wrappedNotifier)
                 : asyncFirer(wrappedNotifier, executor);
     }

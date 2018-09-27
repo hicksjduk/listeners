@@ -16,10 +16,10 @@ import org.slf4j.LoggerFactory;
 import uk.org.thehickses.channel.Channel;
 
 /**
- * A generic implementation of the Listener design pattern. Can be used to register listeners of any type, and fire
- * events of any type to all registered listeners. Firing of events can be done either synchronously or asynchronously,
- * and can be conditional or unconditional - a listener can register to receive all events, or just a subset based on
- * the event contents.
+ * A generic implementation of the Listener design pattern. Can be used to register listeners of any specified type, and
+ * fire events of any specified type to the registered listeners. Firing of events can be done either synchronously or
+ * asynchronously. A listener can register to receive all events (the default), or can specify a selector which selects
+ * which events it should receive based on their contents.
  * 
  * @author Jeremy Hicks
  *
@@ -162,18 +162,17 @@ public class Listeners<L, E>
         return null;
     }
 
-    private final Map<L, Predicate<E>> listenersAndTheirSelectors = new ConcurrentHashMap<>();
-    private final BiConsumer<Collection<L>, E> firer;
+    private final Map<L, Predicate<? super E>> listenersAndTheirSelectors = new ConcurrentHashMap<>();
+    private final BiConsumer<Collection<L>, E> eventFirer;
 
     private Listeners(BiConsumer<L, E> notifier, BiConsumer<Integer, Runnable> executor)
     {
         Objects.requireNonNull(notifier);
-        BiConsumer<L, E> wrappedNotifier = faultLoggingNotifier(notifier);
-        this.firer = executor == null ? syncFirer(wrappedNotifier)
-                : asyncFirer(wrappedNotifier, executor);
+        this.eventFirer = executor == null ? syncFirer(withFaultLogging(notifier))
+                : asyncFirer(withFaultLogging(notifier), executor);
     }
 
-    private BiConsumer<L, E> faultLoggingNotifier(BiConsumer<L, E> notifier)
+    private BiConsumer<L, E> withFaultLogging(BiConsumer<L, E> notifier)
     {
         return (listener, event) -> {
             try
@@ -188,7 +187,7 @@ public class Listeners<L, E>
     }
 
     /**
-     * Fires an event to all registered listeners whose selector accepts it.
+     * Fires an event to every registered listener whose selector accepts it.
      * 
      * @param event
      *            the event.
@@ -196,19 +195,13 @@ public class Listeners<L, E>
     public void fire(E event)
     {
         Objects.requireNonNull(event);
-        firer.accept(listenersForEvent(event), event);
+        eventFirer.accept(listenersForEvent(event), event);
     }
 
     private BiConsumer<Collection<L>, E> syncFirer(BiConsumer<L, E> notifier)
     {
-        return (listeners, event) -> fire(listeners, event, notifier);
-    }
-
-    private void fire(Collection<L> listeners, E event, BiConsumer<L, E> firer)
-    {
-        if (listeners.isEmpty())
-            return;
-        listeners.forEach(listener -> firer.accept(listener, event));
+        return (listeners, event) -> listeners
+                .forEach(listener -> notifier.accept(listener, event));
     }
 
     private BiConsumer<Collection<L>, E> asyncFirer(BiConsumer<L, E> notifier,
@@ -220,13 +213,12 @@ public class Listeners<L, E>
     private void fire(Collection<L> listeners, E event, BiConsumer<L, E> notifier,
             BiConsumer<Integer, Runnable> executor)
     {
-        if (listeners.isEmpty())
-            return;
         int listenerCount = listeners.size();
+        if (listenerCount == 0)
+            return;
         Channel<Runnable> ch = new Channel<>(listenerCount);
         executor.accept(listenerCount, () -> ch.range(Runnable::run));
-        BiConsumer<L, E> firer = (listener, evt) -> ch.put(() -> notifier.accept(listener, evt));
-        fire(listeners, event, firer);
+        listeners.forEach(listener -> ch.put(() -> notifier.accept(listener, event)));
         ch.closeWhenEmpty();
     }
 
@@ -252,7 +244,7 @@ public class Listeners<L, E>
      * @param selector
      *            the selector. May be null, in which case a selector is used that selects all events.
      */
-    public void addOrUpdateListener(L listener, Predicate<E> selector)
+    public void addOrUpdateListener(L listener, Predicate<? super E> selector)
     {
         Objects.requireNonNull(listener);
         listenersAndTheirSelectors.put(listener, selector == null ? event -> true : selector);
@@ -275,8 +267,8 @@ public class Listeners<L, E>
         return listenersAndTheirSelectors
                 .entrySet()
                 .stream()
-                .filter(e -> e.getValue().test(event))
-                .map(e -> e.getKey())
+                .filter(entry -> entry.getValue().test(event))
+                .map(entry -> entry.getKey())
                 .collect(Collectors.toSet());
     }
 }

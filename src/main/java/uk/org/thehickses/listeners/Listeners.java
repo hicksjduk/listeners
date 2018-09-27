@@ -4,6 +4,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
@@ -162,7 +163,7 @@ public class Listeners<L, E>
         return null;
     }
 
-    private final Map<L, Predicate<E>> listenersAndTheirSelectors = new HashMap<>();
+    private final Map<L, Predicate<E>> listenersAndTheirSelectors = new ConcurrentHashMap<>();
     private final BiConsumer<Collection<L>, E> firer;
 
     private Listeners(BiConsumer<L, E> notifier, BiConsumer<Integer, Runnable> executor)
@@ -254,10 +255,7 @@ public class Listeners<L, E>
     public void addOrUpdateListener(L listener, Predicate<E> selector)
     {
         Objects.requireNonNull(listener);
-        synchronized (listenersAndTheirSelectors)
-        {
-            listenersAndTheirSelectors.put(listener, selector == null ? event -> true : selector);
-        }
+        listenersAndTheirSelectors.put(listener, selector == null ? event -> true : selector);
     }
 
     /**
@@ -269,22 +267,16 @@ public class Listeners<L, E>
     public void removeListener(L listener)
     {
         Objects.requireNonNull(listener);
-        synchronized (listenersAndTheirSelectors)
-        {
-            listenersAndTheirSelectors.remove(listener);
-        }
+        listenersAndTheirSelectors.remove(listener);
     }
 
     private Collection<L> listenersForEvent(E event)
     {
-        synchronized (listenersAndTheirSelectors)
-        {
-            return listenersAndTheirSelectors
-                    .entrySet()
-                    .stream()
-                    .filter(e -> e.getValue().test(event))
-                    .map(e -> e.getKey())
-                    .collect(Collectors.toSet());
-        }
+        return listenersAndTheirSelectors
+                .entrySet()
+                .stream()
+                .filter(e -> e.getValue().test(event))
+                .map(e -> e.getKey())
+                .collect(Collectors.toSet());
     }
 }

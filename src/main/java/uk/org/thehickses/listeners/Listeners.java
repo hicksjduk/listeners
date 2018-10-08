@@ -16,7 +16,7 @@ import org.slf4j.LoggerFactory;
 import uk.org.thehickses.channel.Channel;
 
 /**
- * A generic implementation of the Listener design pattern. Can be used to register listeners of any specified type, and
+ * A generic implementation of the Observer design pattern. Can be used to register listeners of any specified type, and
  * fire events of any specified type to the registered listeners. Firing of events can be done either synchronously or
  * asynchronously. A listener can register to receive all events (the default), or can specify a selector which selects
  * which events it should receive based on their contents.

@@ -6,6 +6,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -78,7 +79,7 @@ public class Listeners<L, E>
      */
     public static <E> Listeners<Listener<E>, E> newInstance(int threadCount)
     {
-        return new Listeners<>(Listener::process, executor(threadCount, null));
+        return new Listeners<>(Listener::process, asyncRunner(threadCount, null));
     }
 
     /**
@@ -100,7 +101,7 @@ public class Listeners<L, E>
     public static <L, E> Listeners<L, E> newInstance(BiConsumer<L, E> notifier, int threadCount)
     {
         Objects.requireNonNull(notifier);
-        return new Listeners<>(notifier, executor(threadCount, null));
+        return new Listeners<>(notifier, asyncRunner(threadCount, null));
     }
 
     /**
@@ -121,7 +122,7 @@ public class Listeners<L, E>
      */
     public static <E> Listeners<Listener<E>, E> newInstance(int threadCount, Executor executor)
     {
-        return new Listeners<>(Listener::process, executor(threadCount, executor));
+        return new Listeners<>(Listener::process, asyncRunner(threadCount, executor));
     }
 
     /**
@@ -148,33 +149,45 @@ public class Listeners<L, E>
             Executor executor)
     {
         Objects.requireNonNull(notifier);
-        return new Listeners<>(notifier, executor(threadCount, executor));
+        return new Listeners<>(notifier, asyncRunner(threadCount, executor));
     }
 
-    private static BiConsumer<Integer, Runnable> executor(int threadCount, Executor executor)
+    private static BiConsumer<Integer, Runnable> asyncRunner(int threadCount, Executor executor)
     {
-        if (threadCount > 0)
-            return (listenerCount, runnable) -> IntStream
-                    .range(0, Math.min(listenerCount, threadCount))
-                    .forEach(i -> {
-                        if (executor == null)
-                            new Thread(runnable).start();
-                        else
-                            executor.execute(runnable);
-                    });
-        return null;
+        if (threadCount < 1)
+            return null;
+        Consumer<Runnable> runner = executor == null ? runnable -> new Thread(runnable).start()
+                : runnable -> executor.execute(runnable);
+        return (listenerCount, runnable) -> IntStream
+                .range(0, Math.min(listenerCount, threadCount))
+                .forEach(i -> runner.accept(runnable));
     }
 
-    private final Map<L, Predicate<? super E>> listenersAndTheirSelectors = new ConcurrentHashMap<>();
-    private final BiConsumer<Collection<L>, E> eventFirer;
-
-    private Listeners(BiConsumer<L, E> notifier, BiConsumer<Integer, Runnable> executor)
+    private static <L, E> BiConsumer<Collection<L>, E> syncFirer(BiConsumer<L, E> notifier)
     {
-        notifier = withFaultLogging(notifier);
-        this.eventFirer = executor == null ? syncFirer(notifier) : asyncFirer(notifier, executor);
+        return (listeners, event) -> listeners
+                .forEach(listener -> notifier.accept(listener, event));
     }
 
-    private BiConsumer<L, E> withFaultLogging(BiConsumer<L, E> notifier)
+    private static <L, E> BiConsumer<Collection<L>, E> asyncFirer(BiConsumer<L, E> notifier,
+            BiConsumer<Integer, Runnable> asyncRunner)
+    {
+        return (listeners, event) -> fire(listeners, event, notifier, asyncRunner);
+    }
+
+    private static <L, E> void fire(Collection<L> listeners, E event, BiConsumer<L, E> notifier,
+            BiConsumer<Integer, Runnable> asyncRunner)
+    {
+        int listenerCount = listeners.size();
+        if (listenerCount == 0)
+            return;
+        Channel<Runnable> ch = new Channel<>(listenerCount);
+        asyncRunner.accept(listenerCount, () -> ch.range(Runnable::run));
+        listeners.forEach(listener -> ch.put(() -> notifier.accept(listener, event)));
+        ch.closeWhenEmpty();
+    }
+
+    private static <L, E> BiConsumer<L, E> withFaultLogging(BiConsumer<L, E> notifier)
     {
         return (listener, event) -> {
             try
@@ -188,40 +201,14 @@ public class Listeners<L, E>
         };
     }
 
-    /**
-     * Fires an event to every registered listener whose selector accepts it.
-     * 
-     * @param event
-     *            the event.
-     */
-    public void fire(E event)
-    {
-        Objects.requireNonNull(event);
-        eventFirer.accept(listenersForEvent(event), event);
-    }
+    private final Map<L, Predicate<? super E>> listenersAndTheirSelectors = new ConcurrentHashMap<>();
+    private final BiConsumer<Collection<L>, E> eventFirer;
 
-    private BiConsumer<Collection<L>, E> syncFirer(BiConsumer<L, E> notifier)
+    private Listeners(BiConsumer<L, E> notifier, BiConsumer<Integer, Runnable> asyncRunner)
     {
-        return (listeners, event) -> listeners
-                .forEach(listener -> notifier.accept(listener, event));
-    }
-
-    private BiConsumer<Collection<L>, E> asyncFirer(BiConsumer<L, E> notifier,
-            BiConsumer<Integer, Runnable> executor)
-    {
-        return (listeners, event) -> fire(listeners, event, notifier, executor);
-    }
-
-    private void fire(Collection<L> listeners, E event, BiConsumer<L, E> notifier,
-            BiConsumer<Integer, Runnable> executor)
-    {
-        int listenerCount = listeners.size();
-        if (listenerCount == 0)
-            return;
-        Channel<Runnable> ch = new Channel<>(listenerCount);
-        executor.accept(listenerCount, () -> ch.range(Runnable::run));
-        listeners.forEach(listener -> ch.put(() -> notifier.accept(listener, event)));
-        ch.closeWhenEmpty();
+        notifier = withFaultLogging(notifier);
+        this.eventFirer = asyncRunner == null ? syncFirer(notifier)
+                : asyncFirer(notifier, asyncRunner);
     }
 
     /**
@@ -262,6 +249,18 @@ public class Listeners<L, E>
     {
         Objects.requireNonNull(listener);
         listenersAndTheirSelectors.remove(listener);
+    }
+
+    /**
+     * Fires an event to every registered listener whose selector accepts it.
+     * 
+     * @param event
+     *            the event.
+     */
+    public void fire(E event)
+    {
+        Objects.requireNonNull(event);
+        eventFirer.accept(listenersForEvent(event), event);
     }
 
     private Collection<L> listenersForEvent(E event)

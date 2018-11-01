@@ -9,15 +9,14 @@ interest to its associated listener.
 ## Creating a Listeners object
 
 When creating a Listeners object, the user has the following choices:
-* The listener type `L`.
-* The event type `E`.
+* The listener type.
+* The event type.
 * Whether notification is to be synchronous or asynchronous; and if the latter, the maximum number of threads
 to use, and whether to use an `Executor` (thread pool), or to create threads on the fly.
 
 A Listeners object is created by calling the `newInstance` static factory method of Listeners, passing some,
 all or none of the following parameters (in the order shown, where more than one is passed):
-* `notifier` - a `BiConsumer<L, E>` which when invoked notifies the specified event to the specified
-listener. If this parameter is not specified, the default is that the supplied `Listener` interface is used as the listener type.
+* `notifier` - an object which when invoked for a particular listener and event notifies the event to the listener. If this parameter is not specified, the default is that the supplied `Listener` interface is used as the listener type.
 * `threadCount` - the maximum number of threads to use when notifying events asynchronously. If this is not
 specified, or the specified value is less than 1, notification is synchronous; otherwise it is asynchronous.
 * `executor` - an `Executor` to use when running asynchronous notification processes. If this is not specified,

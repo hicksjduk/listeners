@@ -27,13 +27,13 @@ supported; and if the specified `threadCount` is less than 1 the value of `execu
 
 ## Listeners and selectors
 
-Each listener that is registered with a `Listeners` object, is associated with a selector, which determines, for any given event, whether the listener is interested in the event. The default
+Each listener that is registered with a `Listeners` object is associated with a selector, which determines, for any given event, whether the listener is interested in the event. The default
 selector, which is used if no selector or a null selector is specified, selects
 all events.  
 
 ## Registering and unregistering listeners 
 
-A listener is registered with a `Listeners` object by calling its `addOrUpdateListener` instance method.
+A listener is registered by calling the `addOrUpdateListener` instance method.
 The first parameter to this method is the listener, which may optionally be followed by a selector. 
 If the listener is not already registered, it is registered; otherwise it remains registered. In either case, its associated selector is set to the specified or defaulted selector.
 

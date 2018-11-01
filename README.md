@@ -27,19 +27,17 @@ supported; and if the specified `threadCount` is less than 1 the value of `execu
 
 ## Listeners and selectors
 
-Each listener that is registered with a `Listeners` object, is associated with a selector, which is a 
-`Predicate<E>` that determines, for any given event, whether the listener is interested in the event,
-and returns `true` if the event should be notified to the listener and `false` if it should not. The default
-selector, which is used if no selector, or a null selector, is specified, always returns `true` and so selects
+Each listener that is registered with a `Listeners` object, is associated with a selector, which determines, for any given event, whether the listener is interested in the event. The default
+selector, which is used if no selector or a null selector is specified, selects
 all events.  
 
-## Registering and deregistering listeners 
+## Registering and unregistering listeners 
 
 A listener is registered with a `Listeners` object by calling its `addOrUpdateListener` instance method.
 The first parameter to this method is the listener, which may optionally be followed by a selector. 
 If the listener is not already registered, it is registered; otherwise it remains registered. In either case, its associated selector is set to the specified or defaulted selector.
 
-A listener is deregistered by calling the `removeListener` instance method. If the listener is not registered,
+A listener is unregistered by calling the `removeListener` instance method. If the listener is not registered,
 this method has no effect; if it is, the listener ceases to be registered.
 
 ## Firing events

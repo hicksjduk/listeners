@@ -6,7 +6,6 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -156,11 +155,10 @@ public class Listeners<L, E>
     {
         if (threadCount < 1)
             return null;
-        Consumer<Runnable> runner = executor == null ? runnable -> new Thread(runnable).start()
-                : runnable -> executor.execute(runnable);
+        Executor ex = executor != null ? executor : runnable -> new Thread(runnable).start();
         return (listenerCount, runnable) -> IntStream
                 .range(0, Math.min(listenerCount, threadCount))
-                .forEach(i -> runner.accept(runnable));
+                .forEach(i -> ex.execute(runnable));
     }
 
     private static <L, E> BiConsumer<Collection<L>, E> syncFirer(BiConsumer<L, E> notifier)

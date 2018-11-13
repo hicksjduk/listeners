@@ -24,12 +24,12 @@ public class ListenersTest
                 .range(0, listenerCount)
                 .mapToObj(i -> mock(Listener.class))
                 .toArray(Listener[]::new);
-        Listeners<Listener<String>, String> chain = Listeners.newInstance();
-        chain.fire("First");
-        Stream.of(listeners).forEach(chain::addOrUpdateListener);
-        chain.fire("Second");
-        chain.removeListener(listeners[0]);
-        chain.fire("Third");
+        Listeners<Listener<String>, String> testObj = Listeners.newInstance();
+        testObj.fire("First");
+        Stream.of(listeners).forEach(testObj::addOrUpdateListener);
+        testObj.fire("Second");
+        testObj.removeListener(listeners[0]);
+        testObj.fire("Third");
         Stream.of(listeners).forEach(l -> verify(l).process("Second"));
         IntStream.range(1, listenerCount).mapToObj(i -> listeners[i]).forEach(
                 l -> verify(l).process("Third"));
@@ -49,12 +49,12 @@ public class ListenersTest
                 .range(0, listenerCount)
                 .mapToObj(i -> mock(MyListener.class))
                 .toArray(MyListener[]::new);
-        Listeners<MyListener, String> chain = Listeners.newInstance(MyListener::doIt);
-        chain.fire("First");
-        Stream.of(listeners).forEach(chain::addOrUpdateListener);
-        chain.fire("Second");
-        chain.removeListener(listeners[0]);
-        chain.fire("Third");
+        Listeners<MyListener, String> testObj = Listeners.newInstance(MyListener::doIt);
+        testObj.fire("First");
+        Stream.of(listeners).forEach(testObj::addOrUpdateListener);
+        testObj.fire("Second");
+        testObj.removeListener(listeners[0]);
+        testObj.fire("Third");
         Stream.of(listeners).forEach(l -> verify(l).doIt("Second"));
         IntStream.range(1, listenerCount).mapToObj(i -> listeners[i]).forEach(
                 l -> verify(l).doIt("Third"));
@@ -76,9 +76,9 @@ public class ListenersTest
             l.process(e);
             done.put(l);
         }).toArray(Listener[]::new);
-        Listeners<Listener<String>, String> chain = Listeners.newInstance(threadCount);
-        Stream.of(wrappers).forEach(chain::addOrUpdateListener);
-        chain.fire("Hello");
+        Listeners<Listener<String>, String> testObj = Listeners.newInstance(threadCount);
+        Stream.of(wrappers).forEach(testObj::addOrUpdateListener);
+        testObj.fire("Hello");
         IntStream.range(0, listenerCount).forEach(i -> verify(done.get().value).process("Hello"));
         verifyNoMoreInteractions((Object[]) listeners);
     }
@@ -101,10 +101,10 @@ public class ListenersTest
         ExecutorService threadPool = Executors.newFixedThreadPool(10);
         try
         {
-            Listeners<Listener<String>, String> chain = Listeners.newInstance(threadCount,
+            Listeners<Listener<String>, String> testObj = Listeners.newInstance(threadCount,
                     threadPool);
-            Stream.of(wrappers).forEach(chain::addOrUpdateListener);
-            chain.fire("Hello");
+            Stream.of(wrappers).forEach(testObj::addOrUpdateListener);
+            testObj.fire("Hello");
             IntStream.range(0, listenerCount).forEach(
                     i -> verify(done.get().value).process("Hello"));
         }
@@ -119,11 +119,11 @@ public class ListenersTest
     @Test
     public void testWithExceptionThrown()
     {
-        Listeners<Listener<String>, String> chain = Listeners.newInstance();
+        Listeners<Listener<String>, String> testObj = Listeners.newInstance();
         Listener<String> listener = mock(Listener.class);
         doThrow(IllegalArgumentException.class).when(listener).process(anyString());
-        chain.addOrUpdateListener(listener);
-        chain.fire("Aaarrggghhh!!!");
+        testObj.addOrUpdateListener(listener);
+        testObj.fire("Aaarrggghhh!!!");
         verify(listener).process("Aaarrggghhh!!!");
         verifyNoMoreInteractions(listener);
     }
@@ -132,10 +132,10 @@ public class ListenersTest
     @SuppressWarnings("unchecked")
     public void testWithNegativeThreadCount()
     {
-        Listeners<Listener<String>, String> chain = Listeners.newInstance(-4);
+        Listeners<Listener<String>, String> testObj = Listeners.newInstance(-4);
         Listener<String> listener = mock(Listener.class);
-        chain.addOrUpdateListener(listener);
-        chain.fire("Hej");
+        testObj.addOrUpdateListener(listener);
+        testObj.fire("Hej");
         verify(listener).process("Hej");
         verifyNoMoreInteractions(listener);
     }
@@ -145,15 +145,15 @@ public class ListenersTest
     public void testFullRemoval()
     {
         int listenerCount = 30;
-        Listeners<Listener<Boolean>, Boolean> chain = Listeners.newInstance();
+        Listeners<Listener<Boolean>, Boolean> testObj = Listeners.newInstance();
         Listener<Boolean>[] listeners = IntStream
                 .range(0, listenerCount)
                 .mapToObj(i -> mock(Listener.class))
                 .toArray(Listener[]::new);
-        Stream.of(listeners).forEach(chain::addOrUpdateListener);
-        chain.fire(true);
-        Stream.of(listeners).forEach(chain::removeListener);
-        chain.fire(false);
+        Stream.of(listeners).forEach(testObj::addOrUpdateListener);
+        testObj.fire(true);
+        Stream.of(listeners).forEach(testObj::removeListener);
+        testObj.fire(false);
         Stream.of(listeners).forEach(l -> verify(l).process(true));
         verifyNoMoreInteractions((Object[]) listeners);
     }
@@ -163,7 +163,7 @@ public class ListenersTest
     public void testSyncWithSelector()
     {
         int listenerCount = 30;
-        Listeners<Listener<Boolean>, Boolean> chain = Listeners.newInstance();
+        Listeners<Listener<Boolean>, Boolean> testObj = Listeners.newInstance();
         Listener<Boolean>[] listeners = IntStream
                 .range(0, listenerCount)
                 .mapToObj(i -> mock(Listener.class))
@@ -183,12 +183,12 @@ public class ListenersTest
                 })
                 .toArray(Predicate[]::new);
         IntStream.range(0, listenerCount).forEach(
-                i -> chain.addOrUpdateListener(listeners[i], selectors[i]));
-        chain.fire(true);
-        Stream.of(listeners).forEach(l -> chain.addOrUpdateListener(l, b -> b));
-        chain.fire(false);
-        Stream.of(listeners).forEach(l -> chain.addOrUpdateListener(l));
-        chain.fire(false);
+                i -> testObj.addOrUpdateListener(listeners[i], selectors[i]));
+        testObj.fire(true);
+        Stream.of(listeners).forEach(l -> testObj.addOrUpdateListener(l, b -> b));
+        testObj.fire(false);
+        Stream.of(listeners).forEach(l -> testObj.addOrUpdateListener(l));
+        testObj.fire(false);
         IntStream.range(0, listenerCount).forEach(i -> {
             if (i % 3 != 2)
                 verify(listeners[i]).process(true);
@@ -214,14 +214,14 @@ public class ListenersTest
         Predicate<Boolean>[] selectors = Stream
                 .<Predicate<Boolean>> of(null, b -> b, b -> !b)
                 .toArray(Predicate[]::new);
-        Listeners<Listener<Boolean>, Boolean> chain = Listeners.newInstance(5);
+        Listeners<Listener<Boolean>, Boolean> testObj = Listeners.newInstance(5);
         IntStream.range(0, listenerCount).forEach(
-                i -> chain.addOrUpdateListener(wrappers[i], selectors[i % 3]));
-        chain.fire(true);
-        Stream.of(wrappers).forEach(l -> chain.addOrUpdateListener(l, b -> b));
-        chain.fire(false);
-        Stream.of(wrappers).forEach(l -> chain.addOrUpdateListener(l));
-        chain.fire(false);
+                i -> testObj.addOrUpdateListener(wrappers[i], selectors[i % 3]));
+        testObj.fire(true);
+        Stream.of(wrappers).forEach(l -> testObj.addOrUpdateListener(l, b -> b));
+        testObj.fire(false);
+        Stream.of(wrappers).forEach(l -> testObj.addOrUpdateListener(l));
+        testObj.fire(false);
         IntStream.range(0, listenerCount * 5 / 3).forEach(i -> done.get());
         IntStream.range(0, listenerCount).forEach(i -> {
             if (i % 3 != 2)

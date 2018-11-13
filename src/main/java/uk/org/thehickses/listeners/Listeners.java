@@ -175,17 +175,17 @@ public class Listeners<L, E>
     private static <L, E> BiConsumer<Collection<L>, E> asyncFirer(BiConsumer<L, E> notifier,
             BiConsumer<Integer, Runnable> asyncRunner)
     {
-        return (listeners, event) -> fire(listeners, event, notifier, asyncRunner);
+        return (listeners, event) -> fire(listeners, firer(event, notifier), asyncRunner);
     }
 
-    private static <L, E> void fire(Collection<L> listeners, E event, BiConsumer<L, E> notifier,
+    private static <L, E> void fire(Collection<L> listeners, Consumer<L> firer,
             BiConsumer<Integer, Runnable> asyncRunner)
     {
         int listenerCount = listeners.size();
         if (listenerCount == 0)
             return;
         Channel<L> ch = new Channel<>(listenerCount);
-        asyncRunner.accept(listenerCount, () -> ch.range(firer(event, notifier)));
+        asyncRunner.accept(listenerCount, () -> ch.range(firer));
         listeners.forEach(ch::put);
         ch.closeWhenEmpty();
     }

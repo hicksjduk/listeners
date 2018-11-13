@@ -6,6 +6,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -163,8 +164,12 @@ public class Listeners<L, E>
 
     private static <L, E> BiConsumer<Collection<L>, E> syncFirer(BiConsumer<L, E> notifier)
     {
-        return (listeners, event) -> listeners
-                .forEach(listener -> notifier.accept(listener, event));
+        return (listeners, event) -> listeners.forEach(firer(event, notifier));
+    }
+
+    private static <L, E> Consumer<L> firer(E event, BiConsumer<L, E> notifier)
+    {
+        return listener -> notifier.accept(listener, event);
     }
 
     private static <L, E> BiConsumer<Collection<L>, E> asyncFirer(BiConsumer<L, E> notifier,
@@ -179,9 +184,9 @@ public class Listeners<L, E>
         int listenerCount = listeners.size();
         if (listenerCount == 0)
             return;
-        Channel<Runnable> ch = new Channel<>(listenerCount);
-        asyncRunner.accept(listenerCount, () -> ch.range(Runnable::run));
-        listeners.forEach(listener -> ch.put(() -> notifier.accept(listener, event)));
+        Channel<L> ch = new Channel<>(listenerCount);
+        asyncRunner.accept(listenerCount, () -> ch.range(firer(event, notifier)));
+        listeners.forEach(ch::put);
         ch.closeWhenEmpty();
     }
 

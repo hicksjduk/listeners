@@ -178,7 +178,7 @@ public class Listeners<L, E>
         return (listeners, event) -> fire(listeners, firer(event, notifier), asyncRunner);
     }
 
-    private static <L, E> void fire(Collection<L> listeners, Consumer<L> firer,
+    private static <L> void fire(Collection<L> listeners, Consumer<L> firer,
             BiConsumer<Integer, Runnable> asyncRunner)
     {
         int listenerCount = listeners.size();

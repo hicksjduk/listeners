@@ -273,6 +273,6 @@ public class Listeners<L, E>
                 .stream()
                 .filter(entry -> entry.getValue().test(event))
                 .map(entry -> entry.getKey())
-                .collect(Collectors.toSet());
+                .collect(Collectors.toList());
     }
 }

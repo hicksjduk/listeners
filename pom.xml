@@ -28,8 +28,8 @@
 			<version>0.1</version>
 			<exclusions>
 				<exclusion>
-					<groupId>uk.org.thehickses</groupId>
-					<artifactId>listeners</artifactId>
+					<groupId>${groupId}</groupId>
+					<artifactId>${artifactId}</artifactId>
 				</exclusion>
 			</exclusions>
 		</dependency>

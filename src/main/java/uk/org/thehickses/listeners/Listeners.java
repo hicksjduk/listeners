@@ -157,9 +157,9 @@ public class Listeners<L, E>
         if (threadCount < 1)
             return null;
         Executor ex = executor != null ? executor : runnable -> new Thread(runnable).start();
-        return (listenerCount, runnable) -> IntStream
-                .range(0, Math.min(listenerCount, threadCount))
-                .forEach(i -> ex.execute(runnable));
+        return (maxThreadCount, process) -> IntStream
+                .range(0, Math.min(maxThreadCount, threadCount))
+                .forEach(i -> ex.execute(process));
     }
 
     private static <L, E> BiConsumer<Collection<L>, E> syncFirer(BiConsumer<L, E> notifier)

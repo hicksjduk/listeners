@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ForkJoinPool;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -67,8 +68,9 @@ public class Listeners<L, E>
 
     /**
      * Creates an instance which notifies events of a specified event type to listeners of the default listener type. If
-     * the specified thread count is greater than 0, the events are notified asynchronously by creating up to the
-     * specified number of threads; otherwise they are notified synchronously.
+     * the specified thread count is greater than 0, the events are notified asynchronously by submitting up to the
+     * specified number of notification jobs to the system default thread pool; otherwise they are notified
+     * synchronously.
      * 
      * @param <E>
      *            The type of the events.
@@ -84,8 +86,9 @@ public class Listeners<L, E>
 
     /**
      * Creates an instance which notifies events of a specified event type to listeners of a specified listener type. If
-     * the specified thread count is greater than 0, the events are notified asynchronously by creating up to the
-     * specified number of threads; otherwise they are notified synchronously.
+     * the specified thread count is greater than 0, the events are notified asynchronously by submitting up to the
+     * specified number of notification jobs to the system default thread pool; otherwise they are notified
+     * synchronously.
      * 
      * @param <L>
      *            The type of the listeners.
@@ -107,8 +110,8 @@ public class Listeners<L, E>
     /**
      * Creates an instance which notifies events of a specified event type to listeners of the default listener type. If
      * the specified thread count is greater than 0, the events are notified asynchronously, otherwise synchronously. If
-     * they are notified asynchronously and the specified executor is not null, the threads used are taken from the
-     * executor rather than creating new ones.
+     * they are notified asynchronously, the notification jobs are submitted to the system default thread pool if the
+     * specified executor is null, or to the specified executor otherwise.
      * 
      * @param <E>
      *            The type of the events.
@@ -128,8 +131,8 @@ public class Listeners<L, E>
     /**
      * Creates an instance which notifies events of a specified event type to listeners of a specified listener type. If
      * the specified thread count is greater than 0, the events are notified asynchronously, otherwise synchronously. If
-     * they are notified asynchronously and the specified executor is not null, the threads used are taken from the
-     * executor rather than creating new ones.
+     * they are notified asynchronously, the notification jobs are submitted to the system default thread pool if the
+     * specified executor is null, or to the specified executor otherwise.
      * 
      * @param <L>
      *            The type of the listeners.
@@ -156,10 +159,13 @@ public class Listeners<L, E>
     {
         if (threadCount < 1)
             return null;
-        Executor ex = executor != null ? executor : runnable -> new Thread(runnable).start();
-        return (maxThreadCount, process) -> IntStream
-                .range(0, Math.min(maxThreadCount, threadCount))
-                .forEach(i -> ex.execute(process));
+        Executor ex = executor != null ? executor : ForkJoinPool.commonPool();
+        return (maxThreadCount, process) -> {
+            Runnable processCreator = () -> IntStream
+                    .range(0, Math.min(maxThreadCount, threadCount))
+                    .forEach(i -> ex.execute(process));
+            ex.execute(processCreator);
+        };
     }
 
     private static <L, E> BiConsumer<Collection<L>, E> syncFirer(BiConsumer<L, E> notifier)

@@ -159,75 +159,46 @@ public class ListenersTest
     }
 
     @Test
-    @SuppressWarnings("unchecked")
-    public void testSyncWithSelector()
+    public void testSyncWithSelectors()
     {
-        int listenerCount = 30;
-        Listeners<Listener<Boolean>, Boolean> testObj = Listeners.newInstance();
-        Listener<Boolean>[] listeners = IntStream
-                .range(0, listenerCount)
-                .mapToObj(i -> mock(Listener.class))
-                .toArray(Listener[]::new);
-        Predicate<Boolean>[] selectors = IntStream
-                .range(0, listenerCount)
-                .<Predicate<Boolean>> mapToObj(i -> {
-                    switch (i % 3)
-                    {
-                    case 0:
-                        return null;
-                    case 1:
-                        return b -> b;
-                    default:
-                        return b -> !b;
-                    }
-                })
-                .toArray(Predicate[]::new);
-        IntStream.range(0, listenerCount).forEach(
-                i -> testObj.addOrUpdateListener(listeners[i], selectors[i]));
-        testObj.fire(true);
-        Stream.of(listeners).forEach(l -> testObj.addOrUpdateListener(l, b -> b));
-        testObj.fire(false);
-        Stream.of(listeners).forEach(l -> testObj.addOrUpdateListener(l));
-        testObj.fire(false);
-        IntStream.range(0, listenerCount).forEach(i -> {
-            if (i % 3 != 2)
-                verify(listeners[i]).process(true);
-            verify(listeners[i]).process(false);
-        });
-        verifyNoMoreInteractions((Object[]) listeners);
+        testWithSelectors(0);
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     public void testAsyncWithSelectors()
+    {
+        testWithSelectors(5);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void testWithSelectors(int threadCount)
     {
         int listenerCount = 30;
         Listener<Boolean>[] listeners = IntStream
                 .range(0, listenerCount)
                 .mapToObj(i -> mock(Listener.class))
                 .toArray(Listener[]::new);
-        Channel<Void> done = new Channel<>(listenerCount * 2);
+        Channel<Listener<Boolean>> done = new Channel<>(listenerCount);
         Listener<Boolean>[] wrappers = Stream.of(listeners).<Listener<Boolean>> map(l -> e -> {
             l.process(e);
-            done.put(null);
+            done.put(l);
         }).toArray(Listener[]::new);
         Predicate<Boolean>[] selectors = Stream
                 .<Predicate<Boolean>> of(null, b -> b, b -> !b)
                 .toArray(Predicate[]::new);
-        Listeners<Listener<Boolean>, Boolean> testObj = Listeners.newInstance(5);
+        Listeners<Listener<Boolean>, Boolean> testObj = Listeners.newInstance(threadCount);
         IntStream.range(0, listenerCount).forEach(
                 i -> testObj.addOrUpdateListener(wrappers[i], selectors[i % 3]));
         testObj.fire(true);
+        IntStream.range(0, listenerCount / 3 * 2).forEach(
+                i -> verify(done.get().value).process(true));
+        verifyNoMoreInteractions((Object[]) listeners);
         Stream.of(wrappers).forEach(l -> testObj.addOrUpdateListener(l, b -> b));
         testObj.fire(false);
+        verifyNoMoreInteractions((Object[]) listeners);
         Stream.of(wrappers).forEach(l -> testObj.addOrUpdateListener(l));
         testObj.fire(false);
-        IntStream.range(0, listenerCount * 5 / 3).forEach(i -> done.get());
-        IntStream.range(0, listenerCount).forEach(i -> {
-            if (i % 3 != 2)
-                verify(listeners[i]).process(true);
-            verify(listeners[i]).process(false);
-        });
+        IntStream.range(0, listenerCount).forEach(i -> verify(done.get().value).process(false));
         verifyNoMoreInteractions((Object[]) listeners);
     }
 }

@@ -68,7 +68,7 @@ public class Listeners<L, E>
 
     /**
      * Creates an instance which notifies events of a specified event type to listeners of the default listener type. If
-     * the specified thread count is greater than 0, the events are notified asynchronously by submitting up to the
+     * the specified thread count is greater than 0, each event is notified asynchronously by submitting up to the
      * specified number of notification jobs to the system default thread pool; otherwise they are notified
      * synchronously.
      * 
@@ -86,7 +86,7 @@ public class Listeners<L, E>
 
     /**
      * Creates an instance which notifies events of a specified event type to listeners of a specified listener type. If
-     * the specified thread count is greater than 0, the events are notified asynchronously by submitting up to the
+     * the specified thread count is greater than 0, each event is notified asynchronously by submitting up to the
      * specified number of notification jobs to the system default thread pool; otherwise they are notified
      * synchronously.
      * 

@@ -11,24 +11,26 @@ interest to its associated listener.
 When creating a Listeners object, the user has the following choices:
 * The listener type.
 * The event type.
-* Whether notification is to be synchronous or asynchronous; and if the latter, the maximum number of threads
-to use, and whether to use an `Executor` (thread pool), or to create threads on the fly.
+* Whether notification is to be synchronous or asynchronous; and if the latter, the maximum number of notifier threads
+to use for notifying each event, and whether to use a client-supplied `Executor`, or the system default thread pool, to
+launch notifier threads.
 
 A Listeners object is created by calling the `newInstance` static factory method of Listeners, passing some,
 all or none of the following parameters (in the order shown, where more than one is passed):
 * `notifier` - an object which when invoked for a particular listener and event notifies the event to the listener. If this parameter is not specified, the default is that the supplied `Listener` interface is used as the listener type.
 * `threadCount` - the maximum number of threads to use when notifying events asynchronously. If this is not
 specified, or the specified value is less than 1, notification is synchronous; otherwise it is asynchronous.
-* `executor` - an `Executor` to use when running asynchronous notification processes. If this is not specified,
-or a null value is specified, a new thread is created to run every notification processor; otherwise
-the processors are run using the specified executor. Note that it makes no sense to specify this parameter apart
+* `executor` - an `Executor` to use when running asynchronous notification threads. If this is not specified,
+or a null value is specified, the system default thread pool is used; otherwise
+the threads are launched using the specified executor. Note that it makes no sense to specify this parameter apart
 from the `threadCount` parameter, and so the specification of `executor` without `threadCount` is not
 supported; and if the specified `threadCount` is less than 1 the value of `executor` is ignored.
 
 ## Listeners and selectors
 
-Each listener that is registered with a `Listeners` object is associated with a selector, which determines, for any given event, whether the listener is interested in the event. The default
-selector, which is used if no selector or a null selector is specified, selects
+Each listener that is registered with a `Listeners` object is associated with a selector, which determines, for any given event, whether the listener is interested in the event. If the selector
+returns `false` for any given event, that event is not notified to the associated listener. The default
+selector, which is used if no selector or a null selector is specified, always returns `true` and therefore selects
 all events.  
 
 ## Registering and unregistering listeners 

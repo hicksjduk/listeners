@@ -119,7 +119,7 @@ public class Listeners<L, E>
      *            the number of threads to use. Note that if this exceeds the number of threads supported by the
      *            executor, the executor's limit takes precedence.
      * @param executor
-     *            the executor. May be null, in which case asynchronous notifications are done by creating new threads.
+     *            the executor. May be null, in which case the system default thread pool is used.
      * 
      * @return the instance.
      */
@@ -144,7 +144,7 @@ public class Listeners<L, E>
      *            the number of threads to use. Note that if this exceeds the number of threads supported by the
      *            executor, the executor's limit takes precedence.
      * @param executor
-     *            the executor. May be null, in which case asynchronous notifications are done by creating new threads.
+     *            the executor. May be null, in which case the system default thread pool is used.
      * 
      * @return the instance.
      */
